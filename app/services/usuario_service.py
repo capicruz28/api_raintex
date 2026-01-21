@@ -15,7 +15,7 @@ from app.schemas.usuario import UsuarioReadWithRoles, PaginatedUsuarioResponse
 from app.schemas.rol import RolRead
 
 # 🔐 SEGURIDAD
-from app.core.security import get_password_hash
+from app.core.security import get_password_hash, verify_password
 
 # 🚨 EXCEPCIONES - Nuevo sistema de manejo de errores
 from app.core.exceptions import (
@@ -955,4 +955,185 @@ class UsuarioService(BaseService):
                 status_code=500,
                 detail="Error interno al obtener usuarios paginados",
                 internal_code="USER_PAGINATION_UNEXPECTED_ERROR"
+            )
+
+    @staticmethod
+    @BaseService.handle_service_errors
+    async def resetear_contrasena(usuario_id: int, nueva_contrasena: str) -> Dict:
+        """
+        Resetea la contraseña de un usuario (solo para administradores).
+        
+        🔐 RESET SEGURO:
+        - Verifica que el usuario exista y no esté eliminado
+        - Aplica hash seguro a la nueva contraseña
+        - Actualiza fecha de modificación
+        - No requiere conocer la contraseña actual
+        
+        Args:
+            usuario_id: ID del usuario cuya contraseña se reseteará
+            nueva_contrasena: Nueva contraseña en texto plano
+            
+        Returns:
+            Dict: Resultado del reset con metadatos
+            
+        Raises:
+            NotFoundError: Si el usuario no existe
+            ServiceError: Si el reset falla
+        """
+        logger.info(f"Intentando resetear contraseña para usuario ID: {usuario_id}")
+
+        try:
+            # 🔍 VERIFICAR EXISTENCIA DEL USUARIO
+            usuario_existente = await UsuarioService.obtener_usuario_por_id(usuario_id)
+            if not usuario_existente:
+                raise NotFoundError(
+                    detail="Usuario no encontrado",
+                    internal_code="USER_NOT_FOUND"
+                )
+
+            # 🔐 APLICAR HASH SEGURO A NUEVA CONTRASEÑA
+            hashed_password = get_password_hash(nueva_contrasena)
+
+            # 💾 EJECUTAR ACTUALIZACIÓN DE CONTRASEÑA
+            update_query = """
+            UPDATE dbo.usuario
+            SET contrasena = ?, fecha_actualizacion = GETDATE()
+            OUTPUT
+                INSERTED.usuario_id, INSERTED.nombre_usuario, INSERTED.correo,
+                INSERTED.nombre, INSERTED.apellido, INSERTED.es_activo
+            WHERE usuario_id = ? AND es_eliminado = 0
+            """
+            
+            result = execute_update(update_query, (hashed_password, usuario_id))
+
+            if not result:
+                logger.warning(f"No se pudo resetear la contraseña del usuario ID {usuario_id}")
+                raise ServiceError(
+                    status_code=404,
+                    detail="Error al resetear la contraseña, usuario no encontrado o no se pudo modificar",
+                    internal_code="PASSWORD_RESET_FAILED"
+                )
+
+            logger.info(f"Contraseña reseteada exitosamente para usuario ID {usuario_id}")
+            return {
+                "message": "Contraseña reseteada exitosamente",
+                "usuario_id": result['usuario_id'],
+                "nombre_usuario": result['nombre_usuario']
+            }
+
+        except (NotFoundError, ValidationError):
+            raise
+        except DatabaseError as db_err:
+            logger.error(f"Error de BD al resetear contraseña para usuario {usuario_id}: {db_err.detail}")
+            raise ServiceError(
+                status_code=500,
+                detail="Error de base de datos al resetear contraseña",
+                internal_code="PASSWORD_RESET_DB_ERROR"
+            )
+        except Exception as e:
+            logger.exception(f"Error inesperado al resetear contraseña para usuario {usuario_id}: {str(e)}")
+            raise ServiceError(
+                status_code=500,
+                detail="Error interno al resetear contraseña",
+                internal_code="PASSWORD_RESET_UNEXPECTED_ERROR"
+            )
+
+    @staticmethod
+    @BaseService.handle_service_errors
+    async def cambiar_contrasena_propia(usuario_id: int, contrasena_actual: str, nueva_contrasena: str) -> Dict:
+        """
+        Permite a un usuario cambiar su propia contraseña.
+        
+        🔐 CAMBIO SEGURO:
+        - Verifica que el usuario exista y no esté eliminado
+        - Valida la contraseña actual antes de cambiar
+        - Aplica hash seguro a la nueva contraseña
+        - Actualiza fecha de modificación
+        
+        Args:
+            usuario_id: ID del usuario que cambiará su contraseña
+            contrasena_actual: Contraseña actual en texto plano para verificación
+            nueva_contrasena: Nueva contraseña en texto plano
+            
+        Returns:
+            Dict: Resultado del cambio con metadatos
+            
+        Raises:
+            NotFoundError: Si el usuario no existe
+            ValidationError: Si la contraseña actual es incorrecta
+            ServiceError: Si el cambio falla
+        """
+        logger.info(f"Intentando cambiar contraseña propia para usuario ID: {usuario_id}")
+
+        try:
+            # 🔍 VERIFICAR EXISTENCIA DEL USUARIO Y OBTENER CONTRASEÑA ACTUAL
+            query = """
+            SELECT usuario_id, nombre_usuario, contrasena, es_activo
+            FROM dbo.usuario
+            WHERE usuario_id = ? AND es_eliminado = 0
+            """
+            
+            usuario_data = execute_query(query, (usuario_id,))
+            
+            if not usuario_data:
+                raise NotFoundError(
+                    detail="Usuario no encontrado",
+                    internal_code="USER_NOT_FOUND"
+                )
+
+            usuario = usuario_data[0]
+            
+            # 🔐 VALIDAR CONTRASEÑA ACTUAL
+            if not verify_password(contrasena_actual, usuario['contrasena']):
+                logger.warning(f"Intento de cambiar contraseña con contraseña actual incorrecta para usuario ID {usuario_id}")
+                raise ValidationError(
+                    detail="La contraseña actual es incorrecta",
+                    internal_code="INVALID_CURRENT_PASSWORD"
+                )
+
+            # 🔐 APLICAR HASH SEGURO A NUEVA CONTRASEÑA
+            hashed_password = get_password_hash(nueva_contrasena)
+
+            # 💾 EJECUTAR ACTUALIZACIÓN DE CONTRASEÑA
+            update_query = """
+            UPDATE dbo.usuario
+            SET contrasena = ?, fecha_actualizacion = GETDATE()
+            OUTPUT
+                INSERTED.usuario_id, INSERTED.nombre_usuario, INSERTED.correo,
+                INSERTED.nombre, INSERTED.apellido, INSERTED.es_activo
+            WHERE usuario_id = ? AND es_eliminado = 0
+            """
+            
+            result = execute_update(update_query, (hashed_password, usuario_id))
+
+            if not result:
+                logger.warning(f"No se pudo cambiar la contraseña del usuario ID {usuario_id}")
+                raise ServiceError(
+                    status_code=404,
+                    detail="Error al cambiar la contraseña, usuario no encontrado o no se pudo modificar",
+                    internal_code="PASSWORD_CHANGE_FAILED"
+                )
+
+            logger.info(f"Contraseña cambiada exitosamente para usuario ID {usuario_id}")
+            return {
+                "message": "Contraseña cambiada exitosamente",
+                "usuario_id": result['usuario_id'],
+                "nombre_usuario": result['nombre_usuario']
+            }
+
+        except (NotFoundError, ValidationError):
+            raise
+        except DatabaseError as db_err:
+            logger.error(f"Error de BD al cambiar contraseña para usuario {usuario_id}: {db_err.detail}")
+            raise ServiceError(
+                status_code=500,
+                detail="Error de base de datos al cambiar contraseña",
+                internal_code="PASSWORD_CHANGE_DB_ERROR"
+            )
+        except Exception as e:
+            logger.exception(f"Error inesperado al cambiar contraseña para usuario {usuario_id}: {str(e)}")
+            raise ServiceError(
+                status_code=500,
+                detail="Error interno al cambiar contraseña",
+                internal_code="PASSWORD_CHANGE_UNEXPECTED_ERROR"
             )

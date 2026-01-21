@@ -26,7 +26,9 @@ from app.schemas.usuario import (
     UsuarioUpdate,
     UsuarioRead,
     UsuarioReadWithRoles,
-    PaginatedUsuarioResponse
+    PaginatedUsuarioResponse,
+    PasswordReset,
+    PasswordChange
 )
 from app.schemas.rol import RolRead
 from app.schemas.usuario_rol import UsuarioRolRead
@@ -669,4 +671,164 @@ async def consultar_perfil_externo(codigo_trabajador: str):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error interno del servidor al consultar el sistema externo"
+        )
+
+
+@router.post(
+    "/{usuario_id}/reset-password/",
+    response_model=dict,
+    summary="Resetear contraseña de un usuario (Administrador)",
+    description=""" 
+    Permite a un administrador resetear la contraseña de cualquier usuario
+    sin necesidad de conocer la contraseña actual.
+    
+    **Permisos requeridos:**
+    - Rol 'Administrador'
+    
+    **Parámetros de ruta:**
+    - usuario_id: ID numérico del usuario cuya contraseña se reseteará
+    
+    **Validaciones:**
+    - El usuario debe existir y no estar eliminado
+    - La nueva contraseña debe cumplir con las políticas de seguridad:
+      - Mínimo 8 caracteres
+      - Al menos una letra mayúscula
+      - Al menos una letra minúscula
+      - Al menos un número
+    
+    **Respuestas:**
+    - 200: Contraseña reseteada exitosamente
+    - 404: Usuario no encontrado
+    - 422: Error de validación en la nueva contraseña
+    - 500: Error interno del servidor
+    """,
+    dependencies=[Depends(require_admin)]
+)
+async def resetear_contrasena_usuario(usuario_id: int, password_reset: PasswordReset):
+    """
+    Endpoint para resetear la contraseña de un usuario (solo administradores).
+    
+    Args:
+        usuario_id: Identificador único del usuario
+        password_reset: Datos con la nueva contraseña
+        
+    Returns:
+        dict: Resultado del reset con metadatos
+        
+    Raises:
+        HTTPException: En caso de error de validación, no encontrado o error interno
+    """
+    logger.info(f"Solicitud POST /usuarios/{usuario_id}/reset-password/ recibida")
+    
+    try:
+        result = await UsuarioService.resetear_contrasena(
+            usuario_id=usuario_id,
+            nueva_contrasena=password_reset.nueva_contrasena
+        )
+        
+        logger.info(f"Contraseña reseteada exitosamente para usuario ID {usuario_id}")
+        return result
+        
+    except CustomException as ce:
+        logger.warning(f"Error de negocio al resetear contraseña para usuario {usuario_id}: {ce.detail}")
+        raise HTTPException(
+            status_code=ce.status_code, 
+            detail=ce.detail
+        )
+    except Exception as e:
+        logger.exception(f"Error inesperado en endpoint POST /usuarios/{usuario_id}/reset-password/")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error interno del servidor al resetear la contraseña."
+        )
+
+
+@router.post(
+    "/{usuario_id}/change-password/",
+    response_model=dict,
+    summary="Cambiar contraseña propia",
+    description="""
+    Permite a un usuario cambiar su propia contraseña proporcionando
+    la contraseña actual y la nueva contraseña.
+    
+    **Permisos requeridos:**
+    - Autenticación (el usuario solo puede cambiar su propia contraseña)
+    
+    **Parámetros de ruta:**
+    - usuario_id: ID numérico del usuario (debe coincidir con el usuario autenticado)
+    
+    **Validaciones:**
+    - El usuario debe existir y no estar eliminado
+    - La contraseña actual debe ser correcta
+    - La nueva contraseña debe ser diferente a la actual
+    - La nueva contraseña debe cumplir con las políticas de seguridad:
+      - Mínimo 8 caracteres
+      - Al menos una letra mayúscula
+      - Al menos una letra minúscula
+      - Al menos un número
+    
+    **Respuestas:**
+    - 200: Contraseña cambiada exitosamente
+    - 400: Contraseña actual incorrecta o nueva contraseña igual a la actual
+    - 403: Intento de cambiar contraseña de otro usuario
+    - 404: Usuario no encontrado
+    - 422: Error de validación en la nueva contraseña
+    - 500: Error interno del servidor
+    """,
+    dependencies=[Depends(get_current_active_user)]
+)
+async def cambiar_contrasena_propia(
+    usuario_id: int, 
+    password_change: PasswordChange,
+    current_user: UsuarioReadWithRoles = Depends(get_current_active_user)
+):
+    """
+    Endpoint para que un usuario cambie su propia contraseña.
+    
+    Args:
+        usuario_id: Identificador único del usuario
+        password_change: Datos con contraseña actual y nueva contraseña
+        current_user: Usuario autenticado actual
+        
+    Returns:
+        dict: Resultado del cambio con metadatos
+        
+    Raises:
+        HTTPException: En caso de error de validación, no autorizado o error interno
+    """
+    logger.info(f"Solicitud POST /usuarios/{usuario_id}/change-password/ recibida")
+    
+    # 🔒 VERIFICAR QUE EL USUARIO SOLO PUEDE CAMBIAR SU PROPIA CONTRASEÑA
+    if current_user.usuario_id != usuario_id:
+        logger.warning(
+            f"Intento de cambiar contraseña de otro usuario. "
+            f"Usuario autenticado: {current_user.usuario_id}, "
+            f"Usuario solicitado: {usuario_id}"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No tienes permisos para cambiar la contraseña de otro usuario."
+        )
+    
+    try:
+        result = await UsuarioService.cambiar_contrasena_propia(
+            usuario_id=usuario_id,
+            contrasena_actual=password_change.contrasena_actual,
+            nueva_contrasena=password_change.nueva_contrasena
+        )
+        
+        logger.info(f"Contraseña cambiada exitosamente para usuario ID {usuario_id}")
+        return result
+        
+    except CustomException as ce:
+        logger.warning(f"Error de negocio al cambiar contraseña para usuario {usuario_id}: {ce.detail}")
+        raise HTTPException(
+            status_code=ce.status_code, 
+            detail=ce.detail
+        )
+    except Exception as e:
+        logger.exception(f"Error inesperado en endpoint POST /usuarios/{usuario_id}/change-password/")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error interno del servidor al cambiar la contraseña."
         )

@@ -462,3 +462,139 @@ class PaginatedUsuarioResponse(BaseModel):
         json_encoders = {
             datetime: lambda v: v.isoformat()
         }
+
+class PasswordReset(BaseModel):
+    """
+    Schema para reset de contraseña por administrador.
+    
+    Permite a un administrador resetear la contraseña de cualquier usuario
+    sin necesidad de conocer la contraseña actual.
+    """
+    
+    nueva_contrasena: str = Field(
+        ...,
+        min_length=8,
+        max_length=100,
+        description="Nueva contraseña segura con mínimo 8 caracteres, una mayúscula, una minúscula y un número",
+        examples=["NuevaPassword123", "MiNuevaContraseña456"]
+    )
+
+    @field_validator('nueva_contrasena')
+    @classmethod
+    def validar_fortaleza_contrasena(cls, valor: str) -> str:
+        """
+        Valida que la contraseña cumpla con las políticas de seguridad.
+        
+        Requisitos mínimos:
+        - Mínimo 8 caracteres
+        - Al menos una letra mayúscula
+        - Al menos una letra minúscula  
+        - Al menos un número
+        
+        Args:
+            valor: La contraseña a validar
+            
+        Returns:
+            str: Contraseña validada
+            
+        Raises:
+            ValueError: Cuando la contraseña no cumple los requisitos de seguridad
+        """
+        if len(valor) < 8:
+            raise ValueError('La contraseña debe tener al menos 8 caracteres')
+        
+        # Verificar complejidad
+        errores = []
+        
+        if not any(c.isupper() for c in valor):
+            errores.append('al menos una letra mayúscula')
+            
+        if not any(c.islower() for c in valor):
+            errores.append('al menos una letra minúscula')
+            
+        if not any(c.isdigit() for c in valor):
+            errores.append('al menos un número')
+            
+        if errores:
+            raise ValueError(
+                f'La contraseña no cumple con los requisitos de seguridad. '
+                f'Debe contener: {", ".join(errores)}.'
+            )
+        
+        return valor
+
+class PasswordChange(BaseModel):
+    """
+    Schema para cambio de contraseña propio del usuario.
+    
+    Permite a un usuario cambiar su propia contraseña proporcionando
+    la contraseña actual y la nueva contraseña.
+    """
+    
+    contrasena_actual: str = Field(
+        ...,
+        min_length=1,
+        description="Contraseña actual del usuario para verificación",
+        examples=["MiContraseñaActual123"]
+    )
+    
+    nueva_contrasena: str = Field(
+        ...,
+        min_length=8,
+        max_length=100,
+        description="Nueva contraseña segura con mínimo 8 caracteres, una mayúscula, una minúscula y un número",
+        examples=["MiNuevaContraseña456"]
+    )
+
+    @field_validator('nueva_contrasena')
+    @classmethod
+    def validar_fortaleza_contrasena(cls, valor: str) -> str:
+        """
+        Valida que la nueva contraseña cumpla con las políticas de seguridad.
+        
+        Requisitos mínimos:
+        - Mínimo 8 caracteres
+        - Al menos una letra mayúscula
+        - Al menos una letra minúscula  
+        - Al menos un número
+        
+        Args:
+            valor: La contraseña a validar
+            
+        Returns:
+            str: Contraseña validada
+            
+        Raises:
+            ValueError: Cuando la contraseña no cumple los requisitos de seguridad
+        """
+        if len(valor) < 8:
+            raise ValueError('La contraseña debe tener al menos 8 caracteres')
+        
+        # Verificar complejidad
+        errores = []
+        
+        if not any(c.isupper() for c in valor):
+            errores.append('al menos una letra mayúscula')
+            
+        if not any(c.islower() for c in valor):
+            errores.append('al menos una letra minúscula')
+            
+        if not any(c.isdigit() for c in valor):
+            errores.append('al menos un número')
+            
+        if errores:
+            raise ValueError(
+                f'La contraseña no cumple con los requisitos de seguridad. '
+                f'Debe contener: {", ".join(errores)}.'
+            )
+        
+        return valor
+
+    @model_validator(mode='after')
+    def validar_contrasenas_diferentes(self) -> 'PasswordChange':
+        """
+        Valida que la nueva contraseña sea diferente a la actual.
+        """
+        if self.contrasena_actual == self.nueva_contrasena:
+            raise ValueError('La nueva contraseña debe ser diferente a la contraseña actual')
+        return self
