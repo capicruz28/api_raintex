@@ -2050,3 +2050,193 @@ class VacacionesPermisosService(BaseService):
                 detail="Error al listar trabajadores",
                 internal_code="TRABAJADORES_LIST_ERROR"
             )
+
+    @staticmethod
+    @BaseService.handle_service_errors
+    async def obtener_boleta_pago(
+        codigo_trabajador: str,
+        anio: str,
+        mes: str
+    ) -> Dict[str, Any]:
+        """
+        Obtiene la boleta de pago de un trabajador para un año y mes específicos.
+        
+        Args:
+            codigo_trabajador: Código del trabajador
+            anio: Año de la boleta (formato: YYYY)
+            mes: Mes de la boleta (formato: MM)
+            
+        Returns:
+            Dict con los datos de la boleta incluyendo el PDF en base64
+            
+        Raises:
+            NotFoundError: Si no se encuentra la boleta
+            ServiceError: Si hay error al procesar el archivo
+        """
+        try:
+            from app.db.queries import execute_query, SELECT_BOLETA_PAGO
+            import base64
+            
+            # Buscar la boleta
+            params = (codigo_trabajador, anio, mes)
+            resultado = execute_query(SELECT_BOLETA_PAGO, params)
+            
+            if not resultado or len(resultado) == 0:
+                raise NotFoundError(
+                    detail=f"No se encontró boleta de pago para el año {anio} y mes {mes}. Verifique que la boleta exista en el sistema.",
+                    internal_code="BOLETA_NOT_FOUND"
+                )
+            
+            boleta = resultado[0]
+            archivo_hex = boleta.get('archivo_pdf_hex')
+            
+            if not archivo_hex:
+                raise NotFoundError(
+                    detail=f"La boleta de pago para el año {anio} y mes {mes} no tiene archivo PDF asociado. Contacte al área de recursos humanos.",
+                    internal_code="BOLETA_SIN_ARCHIVO"
+                )
+            
+            # Convertir a bytes y luego a base64
+            try:
+                pdf_bytes = None
+                
+                # Si ya es bytes (varbinary desde SQL Server)
+                if isinstance(archivo_hex, bytes):
+                    pdf_bytes = archivo_hex
+                # Si es string hexadecimal
+                elif isinstance(archivo_hex, str):
+                    # Si viene con prefijo "0x", removerlo
+                    hex_string = archivo_hex
+                    if hex_string.startswith('0x') or hex_string.startswith('0X'):
+                        hex_string = hex_string[2:]
+                    
+                    # Convertir hex string a bytes
+                    pdf_bytes = bytes.fromhex(hex_string)
+                else:
+                    raise ValueError(f"Tipo de dato no soportado para archivo: {type(archivo_hex)}")
+                
+                # Convertir bytes a base64
+                pdf_base64 = base64.b64encode(pdf_bytes).decode('utf-8')
+                
+            except Exception as e:
+                logger.error(f"Error convirtiendo archivo a base64: {str(e)}")
+                raise ServiceError(
+                    status_code=500,
+                    detail="Error al procesar el archivo PDF de la boleta",
+                    internal_code="BOLETA_CONVERSION_ERROR"
+                )
+            
+            # Generar nombre de archivo sugerido
+            nombre_archivo = f"boleta_{codigo_trabajador}_{anio}_{mes}.pdf"
+            
+            return {
+                'codigo_trabajador': boleta['codigo_trabajador'],
+                'anio': boleta['anio'],
+                'mes': boleta['mes'],
+                'archivo_pdf_base64': pdf_base64,
+                'nombre_archivo': nombre_archivo
+            }
+            
+        except (NotFoundError, ServiceError):
+            raise
+        except Exception as e:
+            logger.exception(f"Error obteniendo boleta de pago: {str(e)}")
+            raise ServiceError(
+                status_code=500,
+                detail="Error al obtener la boleta de pago",
+                internal_code="BOLETA_GET_ERROR"
+            )
+
+    @staticmethod
+    @BaseService.handle_service_errors
+    async def obtener_certificado_cts(
+        codigo_trabajador: str,
+        anio: str
+    ) -> Dict[str, Any]:
+        """
+        Obtiene el certificado CTS de un trabajador para un año específico.
+        
+        Args:
+            codigo_trabajador: Código del trabajador
+            anio: Año del certificado (formato: YYYY)
+            
+        Returns:
+            Dict con los datos del certificado incluyendo el PDF en base64
+            
+        Raises:
+            NotFoundError: Si no se encuentra el certificado
+            ServiceError: Si hay error al procesar el archivo
+        """
+        try:
+            from app.db.queries import execute_query, SELECT_CERTIFICADO_CTS
+            import base64
+            
+            # Buscar el certificado
+            params = (codigo_trabajador, anio)
+            resultado = execute_query(SELECT_CERTIFICADO_CTS, params)
+            
+            if not resultado or len(resultado) == 0:
+                raise NotFoundError(
+                    detail=f"No se encontró certificado CTS para el año {anio}. Verifique que el certificado exista en el sistema.",
+                    internal_code="CERTIFICADO_CTS_NOT_FOUND"
+                )
+            
+            certificado = resultado[0]
+            archivo_hex = certificado.get('archivo_pdf_hex')
+            
+            if not archivo_hex:
+                raise NotFoundError(
+                    detail=f"El certificado CTS para el año {anio} no tiene archivo PDF asociado. Contacte al área de recursos humanos.",
+                    internal_code="CERTIFICADO_SIN_ARCHIVO"
+                )
+            
+            # Convertir a bytes y luego a base64
+            try:
+                pdf_bytes = None
+                
+                # Si ya es bytes (varbinary desde SQL Server)
+                if isinstance(archivo_hex, bytes):
+                    pdf_bytes = archivo_hex
+                # Si es string hexadecimal
+                elif isinstance(archivo_hex, str):
+                    # Si viene con prefijo "0x", removerlo
+                    hex_string = archivo_hex
+                    if hex_string.startswith('0x') or hex_string.startswith('0X'):
+                        hex_string = hex_string[2:]
+                    
+                    # Convertir hex string a bytes
+                    pdf_bytes = bytes.fromhex(hex_string)
+                else:
+                    raise ValueError(f"Tipo de dato no soportado para archivo: {type(archivo_hex)}")
+                
+                # Convertir bytes a base64
+                pdf_base64 = base64.b64encode(pdf_bytes).decode('utf-8')
+                
+            except Exception as e:
+                logger.error(f"Error convirtiendo archivo a base64: {str(e)}")
+                raise ServiceError(
+                    status_code=500,
+                    detail="Error al procesar el archivo PDF del certificado",
+                    internal_code="CERTIFICADO_CONVERSION_ERROR"
+                )
+            
+            # Generar nombre de archivo sugerido
+            nombre_archivo = f"certificado_cts_{codigo_trabajador}_{anio}.pdf"
+            
+            return {
+                'codigo_trabajador': certificado['codigo_trabajador'],
+                'anio': certificado['anio'],
+                'mes': certificado.get('mes'),  # Puede ser None para certificados CTS
+                'archivo_pdf_base64': pdf_base64,
+                'nombre_archivo': nombre_archivo
+            }
+            
+        except (NotFoundError, ServiceError):
+            raise
+        except Exception as e:
+            logger.exception(f"Error obteniendo certificado CTS: {str(e)}")
+            raise ServiceError(
+                status_code=500,
+                detail="Error al obtener el certificado CTS",
+                internal_code="CERTIFICADO_CTS_GET_ERROR"
+            )

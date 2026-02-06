@@ -462,3 +462,31 @@ class PaginatedTrabajadorResponse(BaseModel):
     page: int
     limit: int
     pages: int
+
+
+# ============================================
+# SCHEMAS PARA BOLETAS Y CERTIFICADOS CTS
+# ============================================
+
+class BoletaPagoResponse(BaseModel):
+    """Schema para respuesta de boleta de pago"""
+    codigo_trabajador: str = Field(..., description="Código del trabajador")
+    anio: str = Field(..., description="Año de la boleta")
+    mes: str = Field(..., description="Mes de la boleta")
+    archivo_pdf_base64: str = Field(..., description="Archivo PDF en formato base64")
+    nombre_archivo: str = Field(..., description="Nombre sugerido para el archivo")
+    
+    class Config:
+        from_attributes = True
+
+
+class CertificadoCTSResponse(BaseModel):
+    """Schema para respuesta de certificado CTS"""
+    codigo_trabajador: str = Field(..., description="Código del trabajador")
+    anio: str = Field(..., description="Año del certificado")
+    mes: Optional[str] = Field(None, description="Mes del certificado (si aplica)")
+    archivo_pdf_base64: str = Field(..., description="Archivo PDF en formato base64")
+    nombre_archivo: str = Field(..., description="Nombre sugerido para el archivo")
+    
+    class Config:
+        from_attributes = True

@@ -1008,27 +1008,46 @@ SELECT_CATALOGO_TIPOS_PERMISO = """
 
 # --- TRABAJADORES Y CUMPLEAÑOS ---
 SELECT_CUMPLEANOS_HOY = """
-    WITH CumpleanosPaginados AS (
+    WITH UnTrabajadorPorFila AS (
         SELECT 
-            t.ctraba AS codigo_trabajador,
+            t.ctraba,
             LTRIM(RTRIM(ISNULL(t.dtraba, ''))) AS nombre_completo,
             t.careas AS codigo_area,
             t.csecci AS codigo_seccion,
             t.ccargo AS codigo_cargo,
-            a.dareas AS descripcion_area,
-            s.dsecci AS descripcion_seccion,
-            c.dcargo AS descripcion_cargo,
+            RTRIM(ISNULL(a.dareas, '')) AS descripcion_area,
+            RTRIM(ISNULL(s.dsecci, '')) AS descripcion_seccion,
+            RTRIM(ISNULL(c.dcargo, '')) AS descripcion_cargo,
             t.numdni AS dni,
             CAST(t.fnacim AS DATE) AS fecha_nacimiento,
             CAST(t.fingre AS DATE) AS fecha_ingreso,
             CAST(t.ffinco AS DATE) AS fecha_fin_contrato,
-            ROW_NUMBER() OVER (ORDER BY LTRIM(RTRIM(ISNULL(t.dtraba, '')))) AS rn
+            ROW_NUMBER() OVER (PARTITION BY t.ctraba ORDER BY t.csecci, t.ccargo) AS rn_worker
         FROM dbo.vw_mtraba10 t
         LEFT JOIN dbo.vw_tareas00 a ON t.careas COLLATE DATABASE_DEFAULT = a.careas COLLATE DATABASE_DEFAULT
         LEFT JOIN dbo.vw_tsecci00 s ON t.csecci COLLATE DATABASE_DEFAULT = s.csecci COLLATE DATABASE_DEFAULT
         LEFT JOIN dbo.vw_tcargo00 c ON t.ccargo COLLATE DATABASE_DEFAULT = c.ccargo COLLATE DATABASE_DEFAULT
-        WHERE DAY(t.fnacim) = DAY(GETDATE())
+        WHERE (t.svigen = 'S' AND t.straba = 'A')
+          AND DAY(t.fnacim) = DAY(GETDATE())
           AND MONTH(t.fnacim) = MONTH(GETDATE())
+    ),
+    CumpleanosPaginados AS (
+        SELECT 
+            ctraba AS codigo_trabajador,
+            nombre_completo,
+            codigo_area,
+            codigo_seccion,
+            codigo_cargo,
+            descripcion_area,
+            descripcion_seccion,
+            descripcion_cargo,
+            dni,
+            fecha_nacimiento,
+            fecha_ingreso,
+            fecha_fin_contrato,
+            ROW_NUMBER() OVER (ORDER BY nombre_completo, ctraba) AS rn
+        FROM UnTrabajadorPorFila
+        WHERE rn_worker = 1
     )
     SELECT 
         codigo_trabajador,
@@ -1048,37 +1067,57 @@ SELECT_CUMPLEANOS_HOY = """
 """
 
 COUNT_CUMPLEANOS_HOY = """
-    SELECT COUNT(*) AS total
+    SELECT COUNT(DISTINCT t.ctraba) AS total
     FROM dbo.vw_mtraba10 t
-    WHERE DAY(t.fnacim) = DAY(GETDATE())
+    WHERE (t.svigen = 'S' AND t.straba = 'A')
+      AND DAY(t.fnacim) = DAY(GETDATE())
       AND MONTH(t.fnacim) = MONTH(GETDATE());
 """
 
 SELECT_TRABAJADORES_PAGINATED = """
-    WITH TrabajadoresPaginados AS (
+    WITH UnTrabajadorPorFila AS (
         SELECT 
-            t.ctraba AS codigo_trabajador,
+            t.ctraba,
             LTRIM(RTRIM(ISNULL(t.dtraba, ''))) AS nombre_completo,
             t.careas AS codigo_area,
             t.csecci AS codigo_seccion,
             t.ccargo AS codigo_cargo,
-            a.dareas AS descripcion_area,
-            s.dsecci AS descripcion_seccion,
-            c.dcargo AS descripcion_cargo,
+            RTRIM(ISNULL(a.dareas, '')) AS descripcion_area,
+            RTRIM(ISNULL(s.dsecci, '')) AS descripcion_seccion,
+            RTRIM(ISNULL(c.dcargo, '')) AS descripcion_cargo,
             t.numdni AS dni,
             CAST(t.fnacim AS DATE) AS fecha_nacimiento,
             CAST(t.fingre AS DATE) AS fecha_ingreso,
             CAST(t.ffinco AS DATE) AS fecha_fin_contrato,
-            ROW_NUMBER() OVER (ORDER BY LTRIM(RTRIM(ISNULL(t.dtraba, '')))) AS rn
+            ROW_NUMBER() OVER (PARTITION BY t.ctraba ORDER BY t.csecci, t.ccargo) AS rn_worker
         FROM dbo.vw_mtraba10 t
         LEFT JOIN dbo.vw_tareas00 a ON t.careas COLLATE DATABASE_DEFAULT = a.careas COLLATE DATABASE_DEFAULT
         LEFT JOIN dbo.vw_tsecci00 s ON t.csecci COLLATE DATABASE_DEFAULT = s.csecci COLLATE DATABASE_DEFAULT
         LEFT JOIN dbo.vw_tcargo00 c ON t.ccargo COLLATE DATABASE_DEFAULT = c.ccargo COLLATE DATABASE_DEFAULT
-        WHERE (? IS NULL OR LOWER(t.ctraba) LIKE LOWER(?))
+        WHERE (t.svigen = 'S' AND t.straba = 'A')
+          AND (? IS NULL OR LOWER(t.ctraba) LIKE LOWER(?))
           AND (? IS NULL OR LOWER(LTRIM(RTRIM(ISNULL(t.dtraba, '')))) LIKE LOWER(?))
           AND (? IS NULL OR t.careas = ?)
           AND (? IS NULL OR t.csecci = ?)
           AND (? IS NULL OR t.ccargo = ?)
+    ),
+    TrabajadoresPaginados AS (
+        SELECT 
+            ctraba AS codigo_trabajador,
+            nombre_completo,
+            codigo_area,
+            codigo_seccion,
+            codigo_cargo,
+            descripcion_area,
+            descripcion_seccion,
+            descripcion_cargo,
+            dni,
+            fecha_nacimiento,
+            fecha_ingreso,
+            fecha_fin_contrato,
+            ROW_NUMBER() OVER (ORDER BY nombre_completo, ctraba) AS rn
+        FROM UnTrabajadorPorFila
+        WHERE rn_worker = 1
     )
     SELECT 
         codigo_trabajador,
@@ -1098,9 +1137,10 @@ SELECT_TRABAJADORES_PAGINATED = """
 """
 
 COUNT_TRABAJADORES = """
-    SELECT COUNT(*) AS total
+    SELECT COUNT(DISTINCT t.ctraba) AS total
     FROM dbo.vw_mtraba10 t
-    WHERE (? IS NULL OR LOWER(t.ctraba) LIKE LOWER(?))
+    WHERE (t.svigen = 'S' AND t.straba = 'A')
+      AND (? IS NULL OR LOWER(t.ctraba) LIKE LOWER(?))
       AND (? IS NULL OR LOWER(LTRIM(RTRIM(ISNULL(t.dtraba, '')))) LIKE LOWER(?))
       AND (? IS NULL OR t.careas = ?)
       AND (? IS NULL OR t.csecci = ?)
@@ -1170,33 +1210,41 @@ COUNT_BUSCAR_CARGOS = """
 """
 
 SELECT_BUSCAR_TRABAJADORES = """
-    SELECT 
-        codigo, nombre_completo, codigo_area, codigo_seccion, codigo_cargo, numero_dni
-    FROM (
+    WITH UnTrabajadorPorFila AS (
         SELECT 
             ctraba AS codigo,
-            dtraba AS nombre_completo,
+            LTRIM(RTRIM(ISNULL(dtraba, ''))) AS nombre_completo,
             careas AS codigo_area,
             csecci AS codigo_seccion,
             ccargo AS codigo_cargo,
             numdni AS numero_dni,
-            ROW_NUMBER() OVER (ORDER BY dtraba) AS rn
+            ROW_NUMBER() OVER (PARTITION BY ctraba ORDER BY csecci, ccargo) AS rn_worker
         FROM dbo.vw_mtraba10
-        WHERE (? IS NULL OR LOWER(ctraba) LIKE LOWER(?))
-          AND (? IS NULL OR LOWER(dtraba) LIKE LOWER(?))
+        WHERE (svigen = 'S' AND straba = 'A')
+          AND (? IS NULL OR LOWER(ctraba) LIKE LOWER(?))
+          AND (? IS NULL OR LOWER(LTRIM(RTRIM(ISNULL(dtraba, '')))) LIKE LOWER(?))
           AND (? IS NULL OR careas = ?)
           AND (? IS NULL OR csecci = ?)
           AND (? IS NULL OR ccargo = ?)
           AND (? IS NULL OR numdni LIKE ?)
-    ) AS numbered_rows
+    ),
+    TrabajadoresNumerados AS (
+        SELECT codigo, nombre_completo, codigo_area, codigo_seccion, codigo_cargo, numero_dni,
+               ROW_NUMBER() OVER (ORDER BY nombre_completo, codigo) AS rn
+        FROM UnTrabajadorPorFila
+        WHERE rn_worker = 1
+    )
+    SELECT codigo, nombre_completo, codigo_area, codigo_seccion, codigo_cargo, numero_dni
+    FROM TrabajadoresNumerados
     WHERE rn > ? AND rn <= ?;
 """
 
 COUNT_BUSCAR_TRABAJADORES = """
-    SELECT COUNT(*) AS total
+    SELECT COUNT(DISTINCT ctraba) AS total
     FROM dbo.vw_mtraba10
-    WHERE (? IS NULL OR LOWER(ctraba) LIKE LOWER(?))
-      AND (? IS NULL OR LOWER(dtraba) LIKE LOWER(?))
+    WHERE (svigen = 'S' AND straba = 'A')
+      AND (? IS NULL OR LOWER(ctraba) LIKE LOWER(?))
+      AND (? IS NULL OR LOWER(LTRIM(RTRIM(ISNULL(dtraba, '')))) LIKE LOWER(?))
       AND (? IS NULL OR careas = ?)
       AND (? IS NULL OR csecci = ?)
       AND (? IS NULL OR ccargo = ?)
@@ -1540,4 +1588,35 @@ GET_NOMBRE_USUARIO_BY_ID = """
     SELECT nombre_usuario, origen_datos, codigo_trabajador_externo
     FROM usuario
     WHERE usuario_id = ? AND es_eliminado = 0;
+"""
+
+# ============================================
+# QUERIES PARA BOLETAS Y CERTIFICADOS CTS
+# ============================================
+
+# Obtener boleta de pago por trabajador, año y mes
+SELECT_BOLETA_PAGO = """
+    SELECT 
+        ctraba AS codigo_trabajador,
+        cannos AS anio,
+        cmeses AS mes,
+        darchi AS archivo_pdf_hex
+    FROM pbolet00
+    WHERE ctraba = ? 
+      AND cannos = ? 
+      AND cmeses = ? 
+      AND ctpref = 'BO';
+"""
+
+# Obtener certificado CTS por trabajador y año
+SELECT_CERTIFICADO_CTS = """
+    SELECT 
+        ctraba AS codigo_trabajador,
+        cannos AS anio,
+        cmeses AS mes,
+        darchi AS archivo_pdf_hex
+    FROM pbolet00
+    WHERE ctraba = ? 
+      AND cannos = ? 
+      AND ctpref = 'CT';
 """
