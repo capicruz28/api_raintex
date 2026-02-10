@@ -475,6 +475,7 @@ class BoletaPagoResponse(BaseModel):
     mes: str = Field(..., description="Mes de la boleta")
     nseman: Optional[str] = Field(None, description="Número de semana (nseman)")
     semana: Optional[int] = Field(None, description="Número de semana dentro del mes (1, 2, 3...)")
+    tipo_documento: Optional[str] = Field(None, description="Descripción del tipo de documento (ej. BOLETA, CTS, OTROS)")
     archivo_pdf_base64: str = Field(..., description="Archivo PDF en formato base64")
     nombre_archivo: str = Field(..., description="Nombre sugerido para el archivo")
     
@@ -493,6 +494,7 @@ class CertificadoCTSResponse(BaseModel):
     anio: str = Field(..., description="Año del certificado")
     mes: Optional[str] = Field(None, description="Mes del certificado (ej. 05, 11)")
     nseman: Optional[str] = Field(None, description="Número de semana (nseman)")
+    tipo_documento: Optional[str] = Field(None, description="Descripción del tipo de documento CTS")
     archivo_pdf_base64: str = Field(..., description="Archivo PDF en formato base64")
     nombre_archivo: str = Field(..., description="Nombre sugerido para el archivo")
     
@@ -503,3 +505,21 @@ class CertificadoCTSResponse(BaseModel):
 class CertificadosCTSResponse(BaseModel):
     """Schema para respuesta de lista de certificados CTS (normalmente 2 por año)"""
     items: List[CertificadoCTSResponse] = Field(..., description="Lista de certificados CTS del año")
+
+
+class DocumentoEmpresaItem(BaseModel):
+    """Documento o aviso de empresa (sin relación a un trabajador específico)"""
+    descripcion: str = Field(..., description="Descripción del documento (ddcocum)")
+    tipo_documento: Optional[str] = Field(None, description="Descripción del tipo de documento")
+    archivo_pdf_base64: str = Field(..., description="Archivo PDF en formato base64")
+    nombre_archivo: str = Field(..., description="Nombre sugerido para el archivo")
+
+
+class DocumentosEmpresaResponse(BaseModel):
+    """Lista de documentos de empresa (ctpdoc = 'E')"""
+    items: List[DocumentoEmpresaItem] = Field(..., description="Lista de documentos de empresa")
+
+
+class AvisosEmpresaResponse(BaseModel):
+    """Lista de avisos de empresa (ctpdoc = 'A')"""
+    items: List[DocumentoEmpresaItem] = Field(..., description="Lista de avisos de empresa")

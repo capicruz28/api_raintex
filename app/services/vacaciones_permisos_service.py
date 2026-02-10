@@ -2140,6 +2140,7 @@ class VacacionesPermisosService(BaseService):
                     'mes': mes_val,
                     'nseman': str(nseman_val) if nseman_val is not None else None,
                     'semana': int(semana_val) if semana_val is not None else None,
+                    'tipo_documento': boleta.get('tipo_documento'),
                     'archivo_pdf_base64': pdf_base64,
                     'nombre_archivo': nombre_archivo
                 })
@@ -2160,6 +2161,90 @@ class VacacionesPermisosService(BaseService):
                 status_code=500,
                 detail="Error al obtener las boletas de pago",
                 internal_code="BOLETA_GET_ERROR"
+            )
+
+    @staticmethod
+    @BaseService.handle_service_errors
+    async def obtener_documentos_pago(
+        codigo_trabajador: str,
+        anio: str,
+        mes: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Obtiene documentos de pago (ctpdoc = 'O') del trabajador.
+        - Solo anio: todos los documentos de pago del año.
+        - anio + mes: solo documentos de ese año/mes.
+        """
+        try:
+            from app.db.queries import execute_query, SELECT_DOCUMENTO_PAGO, SELECT_DOCUMENTO_PAGO_POR_ANIO
+
+            if mes is not None and mes != "":
+                params = (codigo_trabajador, anio, mes)
+                resultado = execute_query(SELECT_DOCUMENTO_PAGO, params)
+                filtro_desc = f"año {anio} y mes {mes}"
+            else:
+                params = (codigo_trabajador, anio)
+                resultado = execute_query(SELECT_DOCUMENTO_PAGO_POR_ANIO, params)
+                filtro_desc = f"año {anio}"
+
+            if not resultado or len(resultado) == 0:
+                raise NotFoundError(
+                    detail=f"No se encontró documento de pago para el {filtro_desc}. Verifique que exista en el sistema.",
+                    internal_code="DOC_PAGO_NOT_FOUND"
+                )
+
+            items: List[Dict[str, Any]] = []
+            for doc in resultado:
+                archivo_hex = doc.get('archivo_pdf_hex')
+                if not archivo_hex:
+                    logger.warning(f"Documento de pago mes {doc.get('mes')} sin archivo PDF, se omite")
+                    continue
+
+                try:
+                    pdf_base64 = VacacionesPermisosService._archivo_hex_a_base64(archivo_hex)
+                except Exception as e:
+                    logger.error(f"Error convirtiendo archivo a base64: {str(e)}")
+                    raise ServiceError(
+                        status_code=500,
+                        detail="Error al procesar el archivo PDF del documento de pago",
+                        internal_code="DOC_PAGO_CONVERSION_ERROR"
+                    )
+
+                mes_val = doc.get('mes') or ''
+                semana_val = doc.get('semana')
+                nseman_val = doc.get('nseman')
+                if nseman_val is not None and str(nseman_val).strip() != '':
+                    nombre_archivo = f"documento_pago_{codigo_trabajador}_{anio}_{mes_val}_s{semana_val or nseman_val}.pdf"
+                else:
+                    nombre_archivo = f"documento_pago_{codigo_trabajador}_{anio}_{mes_val}.pdf"
+
+                items.append({
+                    'codigo_trabajador': doc['codigo_trabajador'],
+                    'anio': doc['anio'],
+                    'mes': mes_val,
+                    'nseman': str(nseman_val) if nseman_val is not None else None,
+                    'semana': int(semana_val) if semana_val is not None else None,
+                    'tipo_documento': doc.get('tipo_documento'),
+                    'archivo_pdf_base64': pdf_base64,
+                    'nombre_archivo': nombre_archivo
+                })
+
+            if not items:
+                raise NotFoundError(
+                    detail=f"Los documentos de pago para el {filtro_desc} no tienen archivo PDF asociado. Contacte al área de recursos humanos.",
+                    internal_code="DOC_PAGO_SIN_ARCHIVO"
+                )
+
+            return {'items': items}
+
+        except (NotFoundError, ServiceError):
+            raise
+        except Exception as e:
+            logger.exception(f"Error obteniendo documentos de pago: {str(e)}")
+            raise ServiceError(
+                status_code=500,
+                detail="Error al obtener los documentos de pago",
+                internal_code="DOC_PAGO_GET_ERROR"
             )
 
     @staticmethod
@@ -2225,6 +2310,7 @@ class VacacionesPermisosService(BaseService):
                     'anio': certificado['anio'],
                     'mes': mes_val,
                     'nseman': str(nseman_val) if nseman_val is not None else None,
+                    'tipo_documento': certificado.get('tipo_documento'),
                     'archivo_pdf_base64': pdf_base64,
                     'nombre_archivo': nombre_archivo
                 })
@@ -2245,4 +2331,122 @@ class VacacionesPermisosService(BaseService):
                 status_code=500,
                 detail="Error al obtener los certificados CTS",
                 internal_code="CERTIFICADO_CTS_GET_ERROR"
+            )
+
+    @staticmethod
+    @BaseService.handle_service_errors
+    async def obtener_documentos_empresa() -> Dict[str, Any]:
+        """
+        Obtiene documentos de empresa (ctpdoc = 'E') desde pdocum00.
+        """
+        try:
+            from app.db.queries import execute_query, SELECT_DOCUMENTOS_EMPRESA
+
+            resultado = execute_query(SELECT_DOCUMENTOS_EMPRESA, ())
+            if not resultado:
+                raise NotFoundError(
+                    detail="No se encontraron documentos de empresa.",
+                    internal_code="DOC_EMPRESA_NOT_FOUND"
+                )
+
+            items: List[Dict[str, Any]] = []
+            for idx, row in enumerate(resultado):
+                archivo_hex = row.get('archivo_pdf_hex')
+                if not archivo_hex:
+                    logger.warning(f"Documento de empresa '{row.get('ddcocum')}' sin archivo PDF, se omite")
+                    continue
+
+                try:
+                    pdf_base64 = VacacionesPermisosService._archivo_hex_a_base64(archivo_hex)
+                except Exception as e:
+                    logger.error(f"Error convirtiendo archivo a base64: {str(e)}")
+                    raise ServiceError(
+                        status_code=500,
+                        detail="Error al procesar el archivo PDF de documentos de empresa",
+                        internal_code="DOC_EMPRESA_CONVERSION_ERROR"
+                    )
+
+                nombre_archivo = f"documento_empresa_{idx + 1}.pdf"
+                items.append({
+                    'descripcion': row.get('ddcocum', ''),
+                    'tipo_documento': row.get('tipo_documento'),
+                    'archivo_pdf_base64': pdf_base64,
+                    'nombre_archivo': nombre_archivo
+                })
+
+            if not items:
+                raise NotFoundError(
+                    detail="Los documentos de empresa no tienen archivo PDF asociado. Contacte al área correspondiente.",
+                    internal_code="DOC_EMPRESA_SIN_ARCHIVO"
+                )
+
+            return {'items': items}
+
+        except (NotFoundError, ServiceError):
+            raise
+        except Exception as e:
+            logger.exception(f"Error obteniendo documentos de empresa: {str(e)}")
+            raise ServiceError(
+                status_code=500,
+                detail="Error al obtener los documentos de empresa",
+                internal_code="DOC_EMPRESA_GET_ERROR"
+            )
+
+    @staticmethod
+    @BaseService.handle_service_errors
+    async def obtener_avisos_empresa() -> Dict[str, Any]:
+        """
+        Obtiene avisos de empresa (ctpdoc = 'A') desde pdocum00.
+        """
+        try:
+            from app.db.queries import execute_query, SELECT_AVISOS_EMPRESA
+
+            resultado = execute_query(SELECT_AVISOS_EMPRESA, ())
+            if not resultado:
+                raise NotFoundError(
+                    detail="No se encontraron avisos de empresa.",
+                    internal_code="AVISO_EMPRESA_NOT_FOUND"
+                )
+
+            items: List[Dict[str, Any]] = []
+            for idx, row in enumerate(resultado):
+                archivo_hex = row.get('archivo_pdf_hex')
+                if not archivo_hex:
+                    logger.warning(f"Aviso de empresa '{row.get('ddcocum')}' sin archivo PDF, se omite")
+                    continue
+
+                try:
+                    pdf_base64 = VacacionesPermisosService._archivo_hex_a_base64(archivo_hex)
+                except Exception as e:
+                    logger.error(f"Error convirtiendo archivo a base64: {str(e)}")
+                    raise ServiceError(
+                        status_code=500,
+                        detail="Error al procesar el archivo PDF de avisos de empresa",
+                        internal_code="AVISO_EMPRESA_CONVERSION_ERROR"
+                    )
+
+                nombre_archivo = f"aviso_empresa_{idx + 1}.pdf"
+                items.append({
+                    'descripcion': row.get('ddcocum', ''),
+                    'tipo_documento': row.get('tipo_documento'),
+                    'archivo_pdf_base64': pdf_base64,
+                    'nombre_archivo': nombre_archivo
+                })
+
+            if not items:
+                raise NotFoundError(
+                    detail="Los avisos de empresa no tienen archivo PDF asociado. Contacte al área correspondiente.",
+                    internal_code="AVISO_EMPRESA_SIN_ARCHIVO"
+                )
+
+            return {'items': items}
+
+        except (NotFoundError, ServiceError):
+            raise
+        except Exception as e:
+            logger.exception(f"Error obteniendo avisos de empresa: {str(e)}")
+            raise ServiceError(
+                status_code=500,
+                detail="Error al obtener los avisos de empresa",
+                internal_code="AVISO_EMPRESA_GET_ERROR"
             )

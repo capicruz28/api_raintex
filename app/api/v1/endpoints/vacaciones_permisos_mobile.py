@@ -17,7 +17,8 @@ from app.schemas.vacaciones_permisos import (
     NotificacionRead, PaginatedNotificacionResponse,
     SaldoVacacionesRead, CatalogosResponse, CatalogoItem,
     PaginatedSolicitudResponse, TrabajadorRead, PaginatedTrabajadorResponse,
-    BoletaPagoResponse, BoletasPagoResponse, CertificadoCTSResponse, CertificadosCTSResponse
+    BoletaPagoResponse, BoletasPagoResponse, CertificadoCTSResponse, CertificadosCTSResponse,
+    DocumentosEmpresaResponse, AvisosEmpresaResponse
 )
 
 # Servicios
@@ -847,4 +848,98 @@ async def obtener_certificado_cts(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error al obtener los certificados CTS"
+        )
+
+
+@router.get(
+    "/documento-pago",
+    response_model=BoletasPagoResponse,
+    summary="Obtener documento(s) de pago",
+    description="""
+    Obtiene documento(s) de pago del trabajador (ctpdoc = 'O').
+    
+    **Comportamiento:**
+    - Solo **anio**: devuelve todos los documentos de pago del año (lista).
+    - **anio** y **mes**: devuelve solo los documentos de ese año y mes.
+    """
+)
+async def obtener_documento_pago(
+    anio: str = Query(..., description="Año del documento de pago (YYYY)", regex="^[0-9]{4}$"),
+    mes: Optional[str] = Query(None, description="Mes del documento (MM). Opcional", regex="^[0-9]{2}$"),
+    current_user: UsuarioReadWithRoles = Depends(get_current_active_user)
+):
+    try:
+        codigo_trabajador = obtener_codigo_trabajador(current_user)
+        resultado = await VacacionesPermisosService.obtener_documentos_pago(
+            codigo_trabajador=codigo_trabajador,
+            anio=anio,
+            mes=mes
+        )
+        logger.info(
+            f"Documentos de pago obtenidos para trabajador {codigo_trabajador}, año {anio}, mes={mes} "
+            f"-> {len(resultado.get('items', []))} ítem(s)"
+        )
+        return resultado
+    except HTTPException:
+        raise
+    except CustomException as ce:
+        logger.warning(f"Error de negocio al obtener documentos de pago: {ce.detail}")
+        raise HTTPException(status_code=ce.status_code, detail=ce.detail)
+    except Exception as e:
+        logger.exception(f"Error inesperado obteniendo documentos de pago: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error al obtener los documentos de pago"
+        )
+
+
+@router.get(
+    "/documentos-empresa",
+    response_model=DocumentosEmpresaResponse,
+    summary="Obtener documentos de empresa",
+    description="Obtiene documentos de empresa (ctpdoc = 'E') para mostrar en la app."
+)
+async def obtener_documentos_empresa(
+    current_user: UsuarioReadWithRoles = Depends(get_current_active_user)
+):
+    try:
+        resultado = await VacacionesPermisosService.obtener_documentos_empresa()
+        logger.info(f"Documentos de empresa obtenidos -> {len(resultado.get('items', []))} ítem(s)")
+        return resultado
+    except HTTPException:
+        raise
+    except CustomException as ce:
+        logger.warning(f"Error de negocio al obtener documentos de empresa: {ce.detail}")
+        raise HTTPException(status_code=ce.status_code, detail=ce.detail)
+    except Exception as e:
+        logger.exception(f"Error inesperado obteniendo documentos de empresa: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error al obtener los documentos de empresa"
+        )
+
+
+@router.get(
+    "/avisos-empresa",
+    response_model=AvisosEmpresaResponse,
+    summary="Obtener avisos de empresa",
+    description="Obtiene avisos de empresa (ctpdoc = 'A') para mostrar en la app."
+)
+async def obtener_avisos_empresa(
+    current_user: UsuarioReadWithRoles = Depends(get_current_active_user)
+):
+    try:
+        resultado = await VacacionesPermisosService.obtener_avisos_empresa()
+        logger.info(f"Avisos de empresa obtenidos -> {len(resultado.get('items', []))} ítem(s)")
+        return resultado
+    except HTTPException:
+        raise
+    except CustomException as ce:
+        logger.warning(f"Error de negocio al obtener avisos de empresa: {ce.detail}")
+        raise HTTPException(status_code=ce.status_code, detail=ce.detail)
+    except Exception as e:
+        logger.exception(f"Error inesperado obteniendo avisos de empresa: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error al obtener los avisos de empresa"
         )

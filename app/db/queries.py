@@ -1591,53 +1591,115 @@ GET_NOMBRE_USUARIO_BY_ID = """
 """
 
 # ============================================
-# QUERIES PARA BOLETAS Y CERTIFICADOS CTS
+# QUERIES PARA BOLETAS, CERTIFICADOS Y DOCUMENTOS
 # ============================================
 
-# Obtener boletas de pago por trabajador, año y mes (con nseman y número de semana por partición mes)
+# Boletas de pago (B)
 SELECT_BOLETA_PAGO = """
     SELECT 
-        ctraba AS codigo_trabajador,
-        cannos AS anio,
-        cmeses AS mes,
-        nseman AS nseman,
-        ROW_NUMBER() OVER (PARTITION BY cannos, cmeses ORDER BY nseman) AS semana,
-        darchi AS archivo_pdf_hex
-    FROM pbolet00
-    WHERE ctraba = ? 
-      AND cannos = ? 
-      AND cmeses = ? 
-      AND ctpref = 'BO'
-    ORDER BY nseman;
+        a.ctraba AS codigo_trabajador,
+        a.cannos AS anio,
+        a.cmeses AS mes,
+        a.nseman AS nseman,
+        ROW_NUMBER() OVER (PARTITION BY a.cannos, a.cmeses ORDER BY a.nseman) AS semana,
+        a.darchi AS archivo_pdf_hex,
+        b.dtpref AS tipo_documento
+    FROM pbolet00 a
+    INNER JOIN ttpref00 b ON a.ctpref = b.ctpref
+    WHERE a.ctraba = ?
+      AND a.cannos = ?
+      AND a.cmeses = ?
+      AND b.ctpdoc = 'B'
+    ORDER BY a.nseman;
 """
 
-# Obtener todas las boletas de pago de un trabajador por año (todos los meses, con nseman y semana)
 SELECT_BOLETAS_PAGO_POR_ANIO = """
     SELECT 
-        ctraba AS codigo_trabajador,
-        cannos AS anio,
-        cmeses AS mes,
-        nseman AS nseman,
-        ROW_NUMBER() OVER (PARTITION BY cannos, cmeses ORDER BY nseman) AS semana,
-        darchi AS archivo_pdf_hex
-    FROM pbolet00
-    WHERE ctraba = ? 
-      AND cannos = ? 
-      AND ctpref = 'BO'
-    ORDER BY cmeses, nseman;
+        a.ctraba AS codigo_trabajador,
+        a.cannos AS anio,
+        a.cmeses AS mes,
+        a.nseman AS nseman,
+        ROW_NUMBER() OVER (PARTITION BY a.cannos, a.cmeses ORDER BY a.nseman) AS semana,
+        a.darchi AS archivo_pdf_hex,
+        b.dtpref AS tipo_documento
+    FROM pbolet00 a
+    INNER JOIN ttpref00 b ON a.ctpref = b.ctpref
+    WHERE a.ctraba = ?
+      AND a.cannos = ?
+      AND b.ctpdoc = 'B'
+    ORDER BY a.cmeses, a.nseman;
 """
 
-# Obtener todos los certificados CTS por trabajador y año (con nseman)
+# Certificados CTS (C)
 SELECT_CERTIFICADOS_CTS = """
     SELECT 
-        ctraba AS codigo_trabajador,
-        cannos AS anio,
-        cmeses AS mes,
-        nseman AS nseman,
-        darchi AS archivo_pdf_hex
-    FROM pbolet00
-    WHERE ctraba = ? 
-      AND cannos = ? 
-      AND ctpref = 'CT'
-    ORDER BY cmeses, nseman;
+        a.ctraba AS codigo_trabajador,
+        a.cannos AS anio,
+        a.cmeses AS mes,
+        a.nseman AS nseman,
+        a.darchi AS archivo_pdf_hex,
+        b.dtpref AS tipo_documento
+    FROM pbolet00 a
+    INNER JOIN ttpref00 b ON a.ctpref = b.ctpref
+    WHERE a.ctraba = ?
+      AND a.cannos = ?
+      AND b.ctpdoc = 'C'
+    ORDER BY a.cmeses, a.nseman;
+"""
+
+# Documentos de pago (O) - similar a boletas
+SELECT_DOCUMENTO_PAGO = """
+    SELECT 
+        a.ctraba AS codigo_trabajador,
+        a.cannos AS anio,
+        a.cmeses AS mes,
+        a.nseman AS nseman,
+        ROW_NUMBER() OVER (PARTITION BY a.cannos, a.cmeses ORDER BY a.nseman) AS semana,
+        a.darchi AS archivo_pdf_hex,
+        b.dtpref AS tipo_documento
+    FROM pbolet00 a
+    INNER JOIN ttpref00 b ON a.ctpref = b.ctpref
+    WHERE a.ctraba = ?
+      AND a.cannos = ?
+      AND a.cmeses = ?
+      AND b.ctpdoc = 'O'
+    ORDER BY a.nseman;
+"""
+
+SELECT_DOCUMENTO_PAGO_POR_ANIO = """
+    SELECT 
+        a.ctraba AS codigo_trabajador,
+        a.cannos AS anio,
+        a.cmeses AS mes,
+        a.nseman AS nseman,
+        ROW_NUMBER() OVER (PARTITION BY a.cannos, a.cmeses ORDER BY a.nseman) AS semana,
+        a.darchi AS archivo_pdf_hex,
+        b.dtpref AS tipo_documento
+    FROM pbolet00 a
+    INNER JOIN ttpref00 b ON a.ctpref = b.ctpref
+    WHERE a.ctraba = ?
+      AND a.cannos = ?
+      AND b.ctpdoc = 'O'
+    ORDER BY a.cmeses, a.nseman;
+"""
+
+# Documentos de empresa (E) y avisos de empresa (A) desde pdocum00
+SELECT_DOCUMENTOS_EMPRESA = """
+    SELECT 
+        a.ddcocum,
+        a.darchi AS archivo_pdf_hex,
+        b.dtpref AS tipo_documento
+    FROM pdocum00 a
+    INNER JOIN ttpref00 b ON a.ctpref = b.ctpref
+    WHERE b.ctpdoc = 'E';
+"""
+
+SELECT_AVISOS_EMPRESA = """
+    SELECT 
+        a.ddcocum,
+        a.darchi AS archivo_pdf_hex,
+        b.dtpref AS tipo_documento
+    FROM pdocum00 a
+    INNER JOIN ttpref00 b ON a.ctpref = b.ctpref
+    WHERE b.ctpdoc = 'A';
 """
