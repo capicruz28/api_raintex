@@ -1,8 +1,10 @@
 # app/services/usuario_service.py
 from datetime import datetime
 import math
+import re
 from typing import Dict, List, Optional, Any
 import logging
+from pydantic_core import ValidationError as PydanticCoreValidationError
 
 # 🗄️ IMPORTACIONES DE BASE DE DATOS
 from app.db.queries import (
@@ -898,19 +900,66 @@ class UsuarioService(BaseService):
                     
                     if usuario_id not in usuarios_dict:
                         # 🆕 CREAR ENTRADA DE USUARIO
-                        usuarios_dict[usuario_id] = UsuarioReadWithRoles(
-                            usuario_id=row['usuario_id'],
-                            nombre_usuario=row['nombre_usuario'],
-                            correo=row['correo'],
-                            nombre=row.get('nombre'),
-                            apellido=row.get('apellido'),
-                            es_activo=row['es_activo'],
-                            correo_confirmado=row['correo_confirmado'],
-                            fecha_creacion=row['fecha_creacion'],
-                            fecha_ultimo_acceso=row.get('fecha_ultimo_acceso'),
-                            fecha_actualizacion=row.get('fecha_actualizacion'),
-                            roles=[]
-                        )
+                        correo_raw = row.get('correo')
+                        try:
+                            usuarios_dict[usuario_id] = UsuarioReadWithRoles(
+                                usuario_id=row['usuario_id'],
+                                nombre_usuario=row['nombre_usuario'],
+                                correo=correo_raw,
+                                nombre=row.get('nombre'),
+                                apellido=row.get('apellido'),
+                                es_activo=row['es_activo'],
+                                correo_confirmado=row['correo_confirmado'],
+                                fecha_creacion=row['fecha_creacion'],
+                                fecha_ultimo_acceso=row.get('fecha_ultimo_acceso'),
+                                fecha_actualizacion=row.get('fecha_actualizacion'),
+                                roles=[]
+                            )
+                        except PydanticCoreValidationError as ve:
+                            # Evitar 500 por datos inconsistentes en BD.
+                            # Si el error es por `correo`, intentamos sanear quitando espacios.
+                            if 'correo' in str(ve):
+                                logger.warning(
+                                    "Correo inválido en usuario; aplicando fallback: "
+                                    f"usuario_id={usuario_id}, correo_raw={correo_raw!r}, error={str(ve)}"
+                                )
+
+                                correo_sanitizado = None
+                                if correo_raw is not None:
+                                    correo_sanitizado = re.sub(r'\s+', '', str(correo_raw)).strip().lower()
+
+                                try:
+                                    usuarios_dict[usuario_id] = UsuarioReadWithRoles(
+                                        usuario_id=row['usuario_id'],
+                                        nombre_usuario=row['nombre_usuario'],
+                                        correo=correo_sanitizado,
+                                        nombre=row.get('nombre'),
+                                        apellido=row.get('apellido'),
+                                        es_activo=row['es_activo'],
+                                        correo_confirmado=row['correo_confirmado'],
+                                        fecha_creacion=row['fecha_creacion'],
+                                        fecha_ultimo_acceso=row.get('fecha_ultimo_acceso'),
+                                        fecha_actualizacion=row.get('fecha_actualizacion'),
+                                        roles=[]
+                                    )
+                                except PydanticCoreValidationError:
+                                    # Si sigue siendo inválido, devolvemos correo como None.
+                                    usuarios_dict[usuario_id] = UsuarioReadWithRoles(
+                                        usuario_id=row['usuario_id'],
+                                        nombre_usuario=row['nombre_usuario'],
+                                        correo=None,
+                                        nombre=row.get('nombre'),
+                                        apellido=row.get('apellido'),
+                                        es_activo=row['es_activo'],
+                                        correo_confirmado=row['correo_confirmado'],
+                                        fecha_creacion=row['fecha_creacion'],
+                                        fecha_ultimo_acceso=row.get('fecha_ultimo_acceso'),
+                                        fecha_actualizacion=row.get('fecha_actualizacion'),
+                                        roles=[]
+                                    )
+                            else:
+                                # Otros errores de validación: se propagan.
+                                raise
 
                     # ➕ AGREGAR ROL SI EXISTE
                     if row.get('rol_id') is not None:

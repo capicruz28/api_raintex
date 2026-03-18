@@ -19,6 +19,8 @@ Características principales:
 
 from fastapi import APIRouter, HTTPException, Depends, status, Query
 from typing import List, Optional, Dict, Any
+import re
+from pydantic_core import ValidationError as PydanticCoreValidationError
 
 # Importar Schemas
 from app.schemas.usuario import (
@@ -237,7 +239,30 @@ async def read_usuario(usuario_id: int):
             )
 
         roles = await UsuarioService.obtener_roles_de_usuario(usuario_id=usuario_id)
-        usuario_con_roles = UsuarioReadWithRoles(**usuario, roles=roles)
+        try:
+            usuario_con_roles = UsuarioReadWithRoles(**usuario, roles=roles)
+        except PydanticCoreValidationError as ve:
+            # Evitar 500 por datos inconsistentes en BD (ej: correo con espacios).
+            if 'correo' in str(ve):
+                correo_raw = usuario.get('correo')
+                logger.warning(
+                    "Correo inválido al recuperar usuario; aplicando fallback: "
+                    f"usuario_id={usuario_id}, correo_raw={correo_raw!r}, error={str(ve)}"
+                )
+
+                correo_sanitizado = None
+                if correo_raw is not None:
+                    correo_sanitizado = re.sub(r'\s+', '', str(correo_raw)).strip().lower()
+
+                usuario_corregido = dict(usuario)
+                usuario_corregido['correo'] = correo_sanitizado
+                try:
+                    usuario_con_roles = UsuarioReadWithRoles(**usuario_corregido, roles=roles)
+                except PydanticCoreValidationError:
+                    usuario_corregido['correo'] = None
+                    usuario_con_roles = UsuarioReadWithRoles(**usuario_corregido, roles=roles)
+            else:
+                raise
         
         logger.debug(f"Usuario ID {usuario_id} encontrado: '{usuario_con_roles.nombre_usuario}'")
         return usuario_con_roles
