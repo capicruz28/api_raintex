@@ -1675,7 +1675,7 @@ SELECT_DOCUMENTO_PAGO = """
     WHERE a.ctraba = ?
       AND a.cannos = ?
       AND a.cmeses = ?
-      AND b.ctpdoc = 'O'
+      AND b.ctpdoc IN ('O', 'C') 
     ORDER BY a.nseman;
 """
 
