@@ -140,7 +140,12 @@ async def _authenticate_cliente_user(username: str, password: str) -> Optional[D
             return None
 
         # Verificar contraseña en texto plano
-        if cliente_user['contrasena'] != password:
+        stored_password = cliente_user.get('contrasena')
+        if stored_password is None:
+            return None
+
+        # Nota: en SQL Server es común que claves en CHAR vengan con espacios a la derecha.
+        if str(stored_password).rstrip() != str(password).rstrip():
             return None
 
         # Buscar si el usuario ya existe en la tabla usuario

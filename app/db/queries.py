@@ -1549,27 +1549,26 @@ SELECT_AREA_TRABAJADOR = """
 AUTHENTICATE_CLIENTE_USER = """
     SELECT 
         cusuar AS nombre_usuario,
-        dclave AS contrasena,
+        cclave AS contrasena,
         ctraba AS codigo_trabajador
-    FROM usuarios_web00
-    WHERE cusuar = ? AND ssuper = 'S';
+    FROM ousuar00
+    WHERE cusuar = ?;
 """
 
 # Obtener datos completos del usuario desde usuarios_web00 y mtraba_web00 para crear registro
 SELECT_CLIENTE_USER_DATA = """
     SELECT 
         a.cusuar AS nombre_usuario,
-        a.ctptra AS tipo_trabajador,
+        'E' AS tipo_trabajador,
         a.dusuar AS descripcion_usuario,
         a.ctraba AS codigo_trabajador,
-        b.correo AS correo,
-        b.area AS area,
-        b.cargo AS cargo,
-        b.nombres AS nombre,
-        b.apellidos AS apellido,
-        b.ntftra AS telefono
-    FROM usuarios_web00 a
-    INNER JOIN mtraba_web00 b ON a.ctraba = b.ctraba
+        a.demail AS correo,
+        '' AS area,
+        '' AS cargo,
+        a.dusuar AS nombre,
+        '' AS apellido,
+        '' AS telefono
+    FROM ousuar00 a    
     WHERE a.cusuar = ?;
 """
 
@@ -1591,9 +1590,103 @@ INSERT_USUARIO_FROM_CLIENTE = """
 
 # Actualizar contraseña en tabla usuarios_web00 (texto plano)
 UPDATE_CLIENTE_PASSWORD = """
-    UPDATE usuarios_web00
-    SET dclave = ?
+    UPDATE ousuar00
+    SET cclave = ?
     WHERE cusuar = ?;
+"""
+
+# ============================================
+# QUERIES PARA APROBACIÓN DE ÓRDENES DE COMPRA
+# ============================================
+
+SELECT_OC_PENDIENTES_APROBACION = """
+    SELECT pdgoco00.ctpdoc,
+           pdgoco00.ndocum,
+           RTRIM(CONVERT(VARCHAR(200), mprove00.drzsoc)) AS proveedor,
+           pdgoco00.femisi,
+           pdgoco00.fentre,
+           ISNULL(pdgoco00.itotal, 0.00) + ISNULL(pdgoco00.iimpue01, 0.00) AS itotal,
+           pdgoco00.cmoned,
+           xxx.norden,
+           RTRIM(CONVERT(VARCHAR(MAX), pdgoco00.dobser)) AS observacion,
+           RTRIM(CONVERT(VARCHAR(200), mclien00.drzsoc)) AS cliente,
+           RTRIM(CONVERT(VARCHAR(100), ttpdoc00.dtpdoc)) AS tipo_documento
+      FROM pdgoco00
+           LEFT JOIN mclien00
+                  ON pdgoco00.cclien = mclien00.cclien
+                 AND mclien00.svigen = 'S',
+           mprove00,
+           (
+               SELECT DISTINCT
+                   ctpdoc,
+                   ndocum,
+                   norden,
+                   CONVERT(VARCHAR(50), cusuar) AS cusuar,
+                   saprob
+               FROM psecap00
+           ) xxx,
+           ttpdoc00
+     WHERE (pdgoco00.cprove = mprove00.cprove)
+       AND (pdgoco00.ctpdoc = xxx.ctpdoc)
+       AND (pdgoco00.ctpdoc = ttpdoc00.ctpdoc)
+       AND (ttpdoc00.stinto = 'N')
+       AND (pdgoco00.ndocum = xxx.ndocum)
+       AND (pdgoco00.sordco NOT IN ('A', 'F', 'B'))
+       AND (mprove00.svigen = 'S')
+       AND (mprove00.sprove = 'A')
+       AND (xxx.cusuar = ? AND xxx.saprob = 'N' AND xxx.norden IN (1, 3))
+    UNION ALL
+    SELECT pdgoco00.ctpdoc,
+           pdgoco00.ndocum,
+           RTRIM(CONVERT(VARCHAR(200), mprove00.drzsoc)) AS proveedor,
+           pdgoco00.femisi,
+           pdgoco00.fentre,
+           ISNULL(pdgoco00.itotal, 0.00) + ISNULL(pdgoco00.iimpue01, 0.00) AS itotal,
+           pdgoco00.cmoned,
+           xxx.norden,
+           RTRIM(CONVERT(VARCHAR(MAX), pdgoco00.dobser)) AS observacion,
+           RTRIM(CONVERT(VARCHAR(200), mclien00.drzsoc)) AS cliente,
+           RTRIM(CONVERT(VARCHAR(100), ttpdoc00.dtpdoc)) AS tipo_documento
+      FROM pdgoco00
+           LEFT JOIN mclien00
+                  ON pdgoco00.cclien = mclien00.cclien
+                 AND mclien00.svigen = 'S',
+           mprove00,
+           (
+               SELECT DISTINCT
+                   ctpdoc,
+                   ndocum,
+                   norden,
+                   CONVERT(VARCHAR(50), cusuar) AS cusuar,
+                   saprob
+               FROM psecap00
+           ) xxx,
+           ttpdoc00
+     WHERE (pdgoco00.cprove = mprove00.cprove)
+       AND (pdgoco00.ctpdoc = xxx.ctpdoc)
+       AND (pdgoco00.ctpdoc = ttpdoc00.ctpdoc)
+       AND (ttpdoc00.stinto = 'N')
+       AND (pdgoco00.ndocum = xxx.ndocum)
+       AND ((pdgoco00.sordco NOT IN ('A', 'F', 'B'))
+       AND  (mprove00.svigen = 'S')
+       AND  (mprove00.sprove = 'A'))
+       AND (xxx.cusuar IN (SELECT CONVERT(VARCHAR(50), cusuar) FROM ousuar00 WHERE susuar = 'A' AND saprueba = 'S')
+       AND  ? IN (SELECT CONVERT(VARCHAR(50), cusuar) FROM ousuar00 WHERE susuar = 'A' AND saprueba = 'S')
+       AND  xxx.saprob = 'N'
+       AND  xxx.norden IN (2));
+"""
+
+UPDATE_PSECAP00_APROBAR_OC = """
+    UPDATE psecap00
+       SET saprob = 'A',
+           faprob = ?
+     WHERE ctpdoc = ? AND ndocum = ? AND norden = ?;
+"""
+
+UPDATE_PDGOCO00_MARCAR_OC_APROBADA = """
+    UPDATE pdgoco00
+       SET sordco = 'B'
+     WHERE ctpdoc = ? AND ndocum = ?;
 """
 
 # Obtener nombre_usuario desde usuario_id para usuarios cliente
