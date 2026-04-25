@@ -1689,6 +1689,56 @@ UPDATE_PDGOCO00_MARCAR_OC_APROBADA = """
      WHERE ctpdoc = ? AND ndocum = ?;
 """
 
+# ============================================
+# QUERIES PARA CONSULTA DE ÓRDENES DE COMPRA
+# (con filtros opcionales armados en backend)
+# ============================================
+
+SELECT_OC_CONSULTA_BASE = """
+    SELECT
+        g.ctpdoc,
+        g.ndocum,
+        RTRIM(CONVERT(VARCHAR(200), p.drzsoc)) AS proveedor,
+        g.femisi,
+        g.fentre,
+        ISNULL(g.itotal, 0.00) + ISNULL(g.iimpue01, 0.00) AS itotal,
+        g.cmoned,
+        RTRIM(CONVERT(VARCHAR(MAX), g.dobser)) AS observacion,
+        RTRIM(CONVERT(VARCHAR(200), c.drzsoc)) AS cliente,
+        RTRIM(CONVERT(VARCHAR(100), t.dtpdoc)) AS tipo_documento,
+        d.citems,
+        COALESCE(
+            CASE
+                WHEN d.citems = '000000' OR d.smodif = 'S'
+                THEN a.ditems
+            END,
+            i.ditems
+        ) AS ditems,
+        d.qsolic,
+        d.ipruni,
+        d.norden
+    FROM pdgoco00 g
+    INNER JOIN pdtoco00 d
+        ON g.ctpdoc = d.ctpdoc
+       AND g.ndocum = d.ndocum
+    LEFT JOIN mitems00 i
+        ON d.citems = i.citems
+    LEFT JOIN mclien00 c
+        ON g.cclien = c.cclien
+       AND c.svigen = 'S'
+    LEFT JOIN pdtaoc00 a
+        ON d.ctpdoc = a.ctpdoc
+       AND d.ndocum = a.ndocum
+       AND d.norden = a.norden
+    INNER JOIN mprove00 p
+        ON g.cprove = p.cprove
+    INNER JOIN ttpdoc00 t
+        ON g.ctpdoc = t.ctpdoc
+    WHERE t.stinto = 'N'
+      AND p.svigen = 'S'
+      AND p.sprove = 'A'
+"""
+
 # Obtener nombre_usuario desde usuario_id para usuarios cliente
 GET_NOMBRE_USUARIO_BY_ID = """
     SELECT nombre_usuario, origen_datos, codigo_trabajador_externo
