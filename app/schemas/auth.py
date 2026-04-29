@@ -12,7 +12,7 @@ Características principales:
 - Documentación clara para desarrolladores
 """
 
-from pydantic import BaseModel, Field, field_validator, EmailStr
+from pydantic import BaseModel, Field, field_validator, EmailStr, ConfigDict
 from typing import List, Optional
 import re
 
@@ -331,6 +331,11 @@ class Token(BaseModel):
         description="Tipo de token, siempre 'bearer' para JWT",
         examples=["bearer"]
     )
+
+    refresh_token: Optional[str] = Field(
+        None,
+        description="Refresh token JWT (login y refresh vía body móvil)",
+    )
     
     user_data: Optional[UserDataWithRoles] = Field(
         None,
@@ -357,6 +362,23 @@ class Token(BaseModel):
         
         return valor
 
+class RefreshTokenBody(BaseModel):
+    """Cuerpo JSON para renovar sesión desde clientes móviles."""
+    refresh_token: str = Field(
+        ...,
+        min_length=20,
+        description="Refresh token JWT obtenido en login o refresh anterior",
+    )
+
+
+class LogoutRequestBody(BaseModel):
+    """Opcional: enviar refresh token cuando no hay cookie (móvil)."""
+    refresh_token: Optional[str] = Field(
+        None,
+        description="Refresh token a revocar (flujo móvil)",
+    )
+
+
 class TokenPayload(BaseModel):
     """
     Schema para el payload de tokens JWT.
@@ -364,6 +386,13 @@ class TokenPayload(BaseModel):
     Representa la estructura de datos codificada dentro de los tokens JWT
     generados por el sistema.
     """
+
+    model_config = ConfigDict(
+        from_attributes=True,
+        str_strip_whitespace=True,
+        validate_assignment=True,
+        extra="ignore",
+    )
     
     sub: Optional[str] = Field(
         None,
@@ -389,6 +418,11 @@ class TokenPayload(BaseModel):
         examples=["access", "refresh"]
     )
 
+    jti: Optional[str] = Field(
+        None,
+        description="Identificador único del refresh token",
+    )
+
     @field_validator('type')
     @classmethod
     def validar_tipo_token(cls, valor: Optional[str]) -> Optional[str]:
@@ -408,9 +442,3 @@ class TokenPayload(BaseModel):
             raise ValueError('El tipo de token debe ser "access" o "refresh"')
         
         return valor
-
-    class Config:
-        """Configuración de Pydantic para el schema."""
-        from_attributes = True
-        str_strip_whitespace = True
-        validate_assignment = True

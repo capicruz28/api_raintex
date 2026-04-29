@@ -1,17 +1,18 @@
 # app/core/auth.py
 from datetime import datetime, timedelta
-from typing import Optional, Dict
+from typing import Optional, Dict, Tuple
 import logging
+import uuid
 
-from fastapi import Depends, HTTPException, status, Cookie
+from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 
 from app.core.config import settings
 from app.core.security import verify_password
 from app.db.queries import (
-    execute_auth_query, 
-    execute_query, 
+    execute_auth_query,
+    execute_query,
     execute_insert,
     AUTHENTICATE_CLIENTE_USER,
     SELECT_CLIENTE_USER_DATA,
@@ -40,11 +41,13 @@ def create_access_token(data: dict) -> str:
     return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
 
-def create_refresh_token(data: dict) -> str:
+def create_refresh_token_with_expiry(data: dict) -> Tuple[str, datetime]:
     """
-    Crea un token JWT de refresh con iat, exp y type='refresh'
+    JWT refresh con jti único; devuelve (token, expires_at UTC naive).
     """
     to_encode = data.copy()
+    if not to_encode.get("jti"):
+        to_encode["jti"] = str(uuid.uuid4())
     now = datetime.utcnow()
     expire = now + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
     to_encode.update({
@@ -52,7 +55,14 @@ def create_refresh_token(data: dict) -> str:
         "iat": now,
         "type": "refresh",
     })
-    return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+    encoded = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+    return encoded, expire
+
+
+def create_refresh_token(data: dict) -> str:
+    """Crea refresh JWT (compatibilidad con llamadas que solo necesitan el string)."""
+    token, _ = create_refresh_token_with_expiry(data)
+    return token
 
 
 def decode_refresh_token(token: str) -> dict:
@@ -65,12 +75,80 @@ def decode_refresh_token(token: str) -> dict:
             raise JWTError("Token type is not refresh")
         return payload
     except JWTError as e:
-        logger.error(f"Error decodificando refresh token: {str(e)}")
+        logger.warning("Refresh JWT inválido o expirado: %s", str(e))
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid refresh token",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+
+def get_user_for_token_principal(username: str) -> Dict:
+    """
+    Carga usuario activo por nombre_usuario (misma lógica que access token).
+    """
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="No se pudieron validar las credenciales",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    query = """
+        SELECT usuario_id, nombre_usuario, correo, nombre, apellido, es_activo, codigo_trabajador_externo,
+               origen_datos
+        FROM usuario
+        WHERE nombre_usuario = ? AND es_eliminado = 0
+    """
+    user = execute_auth_query(query, (username,))
+    if not user:
+        raise credentials_exception
+    if not user["es_activo"]:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Usuario inactivo",
+        )
+    if user.get("origen_datos") == "cliente":
+        user_data_cliente = execute_auth_query(SELECT_CLIENTE_USER_DATA, (username,))
+        if user_data_cliente:
+            user["tipo_trabajador"] = user_data_cliente.get("tipo_trabajador")
+            user["descripcion_usuario"] = user_data_cliente.get("descripcion_usuario")
+            user["area"] = user_data_cliente.get("area")
+            user["cargo"] = user_data_cliente.get("cargo")
+            user["telefono"] = user_data_cliente.get("telefono")
+    if user.get("correo") == "":
+        user["correo"] = None
+    return user
+
+
+def validate_refresh_token_for_rotation(raw_token: str) -> Tuple[Dict, int]:
+    """
+    JWT refresh válido + fila activa en BD por hash + coherencia usuario_id.
+    Devuelve (usuario_dict, token_id BD a revocar en rotación).
+    """
+    from app.core.refresh_token_service import hash_token, fetch_active_refresh_row
+
+    payload = decode_refresh_token(raw_token)
+    username = payload.get("sub")
+    if not username:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid refresh token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    row = fetch_active_refresh_row(hash_token(raw_token))
+    if not row:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid refresh token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    user = get_user_for_token_principal(username)
+    if int(user["usuario_id"]) != int(row["usuario_id"]):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid refresh token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return user, int(row["token_id"])
 
 
 async def _authenticate_local_user(username: str, password: str) -> Optional[Dict]:
@@ -374,106 +452,4 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> Dict:
         logger.error(f"Error procesando payload del token: {str(e)}")
         raise credentials_exception
 
-    query = """
-        SELECT usuario_id, nombre_usuario, correo, nombre, apellido, es_activo, codigo_trabajador_externo,
-               origen_datos
-        FROM usuario
-        WHERE nombre_usuario = ? AND es_eliminado = 0
-    """
-    
-    user = execute_auth_query(query, (username,))
-
-    if not user:
-        raise credentials_exception
-
-    if not user['es_activo']:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Usuario inactivo"
-        )
-
-    # Si es usuario cliente, obtener campos adicionales desde tablas del cliente
-    if user.get('origen_datos') == 'cliente':
-        user_data_cliente = execute_auth_query(SELECT_CLIENTE_USER_DATA, (username,))
-        if user_data_cliente:
-            user['tipo_trabajador'] = user_data_cliente.get('tipo_trabajador')
-            user['descripcion_usuario'] = user_data_cliente.get('descripcion_usuario')
-            user['area'] = user_data_cliente.get('area')
-            user['cargo'] = user_data_cliente.get('cargo')
-            user['telefono'] = user_data_cliente.get('telefono')
-    
-    # Normalizar correo vacío a None
-    if user.get('correo') == '':
-        user['correo'] = None
-
-    return user
-
-
-async def get_current_user_from_refresh(
-    refresh_token: Optional[str] = Cookie(None, alias=settings.REFRESH_COOKIE_NAME)
-) -> Dict:
-    """
-    Obtiene el usuario actual validando el refresh token de la cookie
-    """
-    if not refresh_token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="No refresh token provided"
-        )
-
-    try:
-        payload = decode_refresh_token(refresh_token)
-        token_data = TokenPayload(**payload)
-
-        if not token_data.sub:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid refresh token"
-            )
-
-        username = token_data.sub
-
-        query = """
-            SELECT usuario_id, nombre_usuario, correo, nombre, apellido, es_activo, codigo_trabajador_externo,
-                   origen_datos
-            FROM usuario
-            WHERE nombre_usuario = ? AND es_eliminado = 0
-        """
-        user = execute_auth_query(query, (username,))
-
-        if not user:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Usuario no encontrado"
-            )
-
-        if not user['es_activo']:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Usuario inactivo"
-            )
-
-        # Si es usuario cliente, obtener campos adicionales desde tablas del cliente
-        if user.get('origen_datos') == 'cliente':
-            user_data_cliente = execute_auth_query(SELECT_CLIENTE_USER_DATA, (username,))
-            if user_data_cliente:
-                user['tipo_trabajador'] = user_data_cliente.get('tipo_trabajador')
-                user['descripcion_usuario'] = user_data_cliente.get('descripcion_usuario')
-                user['area'] = user_data_cliente.get('area')
-                user['cargo'] = user_data_cliente.get('cargo')
-                user['telefono'] = user_data_cliente.get('telefono')
-        
-        # Normalizar correo vacío a None
-        if user.get('correo') == '':
-            user['correo'] = None
-
-        return user
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error validando refresh token: {str(e)}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid refresh token"
-        )
+    return get_user_for_token_principal(username)

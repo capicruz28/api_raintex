@@ -253,6 +253,26 @@ WHERE
 # Si no las tienes, deberías añadirlas aquí. Por ejemplo:
 SELECT_ROL_BY_ID = "SELECT rol_id, nombre, descripcion, es_activo, fecha_creacion FROM dbo.rol WHERE rol_id = ? AND es_activo = 1"
 SELECT_ALL_ROLES = "SELECT rol_id, nombre, descripcion, es_activo, fecha_creacion FROM dbo.rol WHERE es_activo = 1 ORDER BY nombre"
+
+# --- Refresh tokens (sesiones multi-dispositivo) ---
+REFRESH_TOKEN_INSERT = """
+INSERT INTO dbo.refresh_tokens (
+    usuario_id, token_hash, expires_at, is_revoked, revoked_at, created_at, client_type, ip_address, user_agent
+)
+OUTPUT INSERTED.token_id
+VALUES (?, ?, ?, 0, NULL, GETDATE(), ?, ?, ?)
+"""
+REFRESH_TOKEN_SELECT_ACTIVE_BY_HASH = """
+SELECT token_id, usuario_id, token_hash, expires_at, is_revoked, revoked_at, created_at, client_type, ip_address, user_agent
+FROM dbo.refresh_tokens
+WHERE token_hash = ? AND is_revoked = 0 AND expires_at > GETUTCDATE()
+"""
+REFRESH_TOKEN_REVOKE_BY_ID = """
+UPDATE dbo.refresh_tokens
+SET is_revoked = 1, revoked_at = GETDATE()
+WHERE token_id = ? AND is_revoked = 0
+"""
+
 INSERT_ROL = "INSERT INTO dbo.rol (nombre, descripcion, es_activo) OUTPUT INSERTED.rol_id, INSERTED.nombre, INSERTED.descripcion, INSERTED.es_activo, INSERTED.fecha_creacion VALUES (?, ?, ?)"
 UPDATE_ROL = "UPDATE dbo.rol SET nombre = ?, descripcion = ?, es_activo = ? OUTPUT INSERTED.rol_id, INSERTED.nombre, INSERTED.descripcion, INSERTED.es_activo, INSERTED.fecha_creacion WHERE rol_id = ?"
 # Nota: DEACTIVATE_ROL podría ser un caso especial de UPDATE_ROL o una query separada

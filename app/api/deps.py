@@ -46,6 +46,9 @@ async def get_current_user_data(token: str = Depends(oauth2_scheme)) -> Dict[str
             settings.SECRET_KEY,
             algorithms=[settings.ALGORITHM]
         )
+        if payload.get("type") != "access":
+            logger.warning("Token JWT rechazado: no es access token.")
+            raise credentials_exception
         username: str = payload.get("sub")
         if username is None:
             logger.warning("Token JWT inválido: falta 'sub'.")
