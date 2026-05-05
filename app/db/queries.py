@@ -1620,7 +1620,7 @@ UPDATE_CLIENTE_PASSWORD = """
 # ============================================
 
 SELECT_OC_PENDIENTES_APROBACION = """
-    SELECT pdgoco00.ctpdoc,
+SELECT pdgoco00.ctpdoc,
            pdgoco00.ndocum,
            RTRIM(CONVERT(VARCHAR(200), mprove00.drzsoc)) AS proveedor,
            pdgoco00.femisi,
@@ -1630,11 +1630,35 @@ SELECT_OC_PENDIENTES_APROBACION = """
            xxx.norden,
            RTRIM(CONVERT(VARCHAR(MAX), pdgoco00.dobser)) AS observacion,
            RTRIM(CONVERT(VARCHAR(200), mclien00.drzsoc)) AS cliente,
-           RTRIM(CONVERT(VARCHAR(100), ttpdoc00.dtpdoc)) AS tipo_documento
+           RTRIM(CONVERT(VARCHAR(100), ttpdoc00.dtpdoc)) AS tipo_documento,
+		   pdtoco00.citems AS articulo,
+        COALESCE(
+            CASE
+                WHEN pdtoco00.citems = '000000' OR pdtoco00.smodif = 'S'
+                THEN pdtaoc00.ditems
+            END,
+            mitems00.ditems
+        ) AS  descripcion_articulo,
+        pdtoco00.qsolic as cantidad_solicitada,
+        pdtoco00.ipruni as precio_unitario,
+        pdtoco00.norden as orden_detalle,
+		pdgoco00.nordtr as orden_trabajo,		
+        RTRIM(CONVERT(VARCHAR(100), ousuar00.dusuar)) AS usuario_creacion,
+		tforpa00.dforpa as forma_pago
       FROM pdgoco00
+	      INNER JOIN pdtoco00 
+			ON pdgoco00.ctpdoc = pdtoco00.ctpdoc AND pdgoco00.ndocum = pdtoco00.ndocum
            LEFT JOIN mclien00
                   ON pdgoco00.cclien = mclien00.cclien
-                 AND mclien00.svigen = 'S',
+                 AND mclien00.svigen = 'S'
+			LEFT JOIN ousuar00  on pdgoco00.cusuar=ousuar00.cusuar
+			LEFT JOIN tforpa00  on pdgoco00.cforpa=tforpa00.cforpa
+			    LEFT JOIN pdtaoc00 
+        ON pdgoco00.ctpdoc = pdtaoc00.ctpdoc
+       AND pdgoco00.ndocum = pdtaoc00.ndocum
+       AND pdtoco00.norden = pdtaoc00.norden
+	       LEFT JOIN mitems00 
+        ON pdtoco00.citems = mitems00.citems,
            mprove00,
            (
                SELECT DISTINCT
@@ -1666,11 +1690,35 @@ SELECT_OC_PENDIENTES_APROBACION = """
            xxx.norden,
            RTRIM(CONVERT(VARCHAR(MAX), pdgoco00.dobser)) AS observacion,
            RTRIM(CONVERT(VARCHAR(200), mclien00.drzsoc)) AS cliente,
-           RTRIM(CONVERT(VARCHAR(100), ttpdoc00.dtpdoc)) AS tipo_documento
+           RTRIM(CONVERT(VARCHAR(100), ttpdoc00.dtpdoc)) AS tipo_documento,
+		   pdtoco00.citems AS articulo,
+        COALESCE(
+            CASE
+                WHEN pdtoco00.citems = '000000' OR pdtoco00.smodif = 'S'
+                THEN pdtaoc00.ditems
+            END,
+            mitems00.ditems
+        ) AS  descripcion_articulo,
+        pdtoco00.qsolic as cantidad_solicitada,
+        pdtoco00.ipruni as precio_unitario,
+        pdtoco00.norden as orden_detalle,
+		pdgoco00.nordtr as orden_trabajo,
+		ousuar00.dusuar as usuario_creacion,
+		tforpa00.dforpa as forma_pago
       FROM pdgoco00
+	        INNER JOIN pdtoco00 
+			ON pdgoco00.ctpdoc = pdtoco00.ctpdoc AND pdgoco00.ndocum = pdtoco00.ndocum
            LEFT JOIN mclien00
                   ON pdgoco00.cclien = mclien00.cclien
-                 AND mclien00.svigen = 'S',
+                 AND mclien00.svigen = 'S'
+			LEFT JOIN ousuar00  on pdgoco00.cusuar=ousuar00.cusuar
+			LEFT JOIN tforpa00  on pdgoco00.cforpa=tforpa00.cforpa
+			LEFT JOIN pdtaoc00 
+			ON pdgoco00.ctpdoc = pdtaoc00.ctpdoc
+		   AND pdgoco00.ndocum = pdtaoc00.ndocum
+		   AND pdtoco00.norden = pdtaoc00.norden
+		   LEFT JOIN mitems00 
+		       ON pdtoco00.citems = mitems00.citems,
            mprove00,
            (
                SELECT DISTINCT
@@ -1715,7 +1763,7 @@ UPDATE_PDGOCO00_MARCAR_OC_APROBADA = """
 # ============================================
 
 SELECT_OC_CONSULTA_BASE = """
-    SELECT
+ SELECT
         g.ctpdoc,
         g.ndocum,
         RTRIM(CONVERT(VARCHAR(200), p.drzsoc)) AS proveedor,
@@ -1726,17 +1774,20 @@ SELECT_OC_CONSULTA_BASE = """
         RTRIM(CONVERT(VARCHAR(MAX), g.dobser)) AS observacion,
         RTRIM(CONVERT(VARCHAR(200), c.drzsoc)) AS cliente,
         RTRIM(CONVERT(VARCHAR(100), t.dtpdoc)) AS tipo_documento,
-        d.citems,
+        d.citems as articulo,
         COALESCE(
             CASE
                 WHEN d.citems = '000000' OR d.smodif = 'S'
                 THEN a.ditems
             END,
             i.ditems
-        ) AS ditems,
-        d.qsolic,
-        d.ipruni,
-        d.norden
+        ) AS descripcion_articulo,
+        d.qsolic as cantidad_solicitada,
+        d.ipruni as precio_unitario,
+        d.norden as orden_detalle,
+		g.nordtr as orden_trabajo,
+		RTRIM(CONVERT(VARCHAR(100), o.dusuar)) AS usuario_creacion,
+		r.dforpa as forma_pago
     FROM pdgoco00 g
     INNER JOIN pdtoco00 d
         ON g.ctpdoc = d.ctpdoc
@@ -1754,6 +1805,8 @@ SELECT_OC_CONSULTA_BASE = """
         ON g.cprove = p.cprove
     INNER JOIN ttpdoc00 t
         ON g.ctpdoc = t.ctpdoc
+	LEFT JOIN ousuar00 o on g.cusuar=o.cusuar
+	LEFT JOIN tforpa00 r on g.cforpa=r.cforpa
     WHERE t.stinto = 'N'
       AND p.svigen = 'S'
       AND p.sprove = 'A'

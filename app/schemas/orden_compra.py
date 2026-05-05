@@ -16,6 +16,14 @@ class OrdenCompraPendienteRead(BaseModel):
     observacion: Optional[str] = None
     cliente: Optional[str] = None
     tipo_documento: Optional[str] = None
+    articulo: Optional[str] = None
+    descripcion_articulo: Optional[str] = None
+    cantidad_solicitada: Optional[float] = None
+    precio_unitario: Optional[float] = None
+    orden_detalle: Optional[int] = None
+    orden_trabajo: Optional[str] = None
+    usuario_creacion: Optional[str] = None
+    forma_pago: Optional[str] = None
 
 
 class AprobarOrdenCompraRequest(BaseModel):
@@ -35,9 +43,12 @@ class OrdenCompraConsultaItemRead(BaseModel):
     observacion: Optional[str] = None
     cliente: Optional[str] = None
     tipo_documento: Optional[str] = None
-    citems: Optional[str] = None
-    ditems: Optional[str] = None
-    qsolic: Optional[float] = None
-    ipruni: Optional[float] = None
-    norden: Optional[int] = None
+    articulo: Optional[str] = None
+    descripcion_articulo: Optional[str] = None
+    cantidad_solicitado: Optional[float] = None
+    precio_unitario: Optional[float] = None
+    orden_detalle: Optional[int] = None
+    orden_trabajo: Optional[str] = None
+    usuario_creacion: Optional[str] = None
+    forma_pago: Optional[str] = None
 
